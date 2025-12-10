@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>오늘 기록하기 – FEELOG</title>
+  <link rel="stylesheet" href="text.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard/dist/web/static/pretendard.css" />
+</head>
+
+<body class="text-page">
+
+  <!-- 배경 이미지 레이어 -->
+  <div id="bg-image" class="bg-image"></div>
+  <div id="bg-overlay" class="bg-overlay"></div>
+
+  <main class="center-box">
+    <!-- 상단 색상 의미 표시 -->
+    <div class="color-badge" id="color-badge">
+      <span class="badge-dot" id="badge-dot"></span>
+      <span class="badge-text" id="badge-text"></span>
+    </div>
+
+    <h2 class="ask">내일의 나에게,<br>오늘을 한 마디로</h2>
+
+    <!-- 사진 업로드 영역 -->
+    <div class="photo-section">
+      <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+      <button id="photo-btn" class="photo-btn">
+        <div class="photo-icon">📷</div>
+        <span>오늘의 사진 한 장</span>
+      </button>
+      <div id="photo-preview" class="photo-preview hidden">
+        <img id="preview-img" src="" alt="미리보기">
+        <button id="remove-photo" class="remove-photo">×</button>
+      </div>
+    </div>
+
+    <textarea id="text" class="input" placeholder="오늘 하루를 한 줄로..."></textarea>
+
+    <button id="save" class="save-btn">보관하기</button>
+
+    <!-- 플라잉 카드 -->
+    <div id="fly" class="fly-card" aria-hidden="true"></div>
+  </main>
+
+  <script>
+    function getLuma(hex) {
+      if (!hex) return 255;
+      hex = hex.replace("#", "");
+      if (hex.length === 3) hex = hex.split("").map(h => h + h).join("");
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+
+    function qs(name) {
+      return new URLSearchParams(location.search).get(name);
+    }
+
+    // 배경색 설정
+    let color = null;
+    const colorParam = qs("color");
+    if (colorParam) {
+      color = "#" + colorParam;
+    } else {
+      color = localStorage.getItem("feelog_lastColor") || "#ffffff";
+    }
+
+    // 배경 이미지 설정 (사용자 요청으로 제거 - 단순 색상 사용)
+    // const emotionData = JSON.parse(localStorage.getItem("feelog_emotion") || "null");
+    // const bgImage = document.getElementById("bg-image");
+    // const bgOverlay = document.getElementById("bg-overlay");
+
+    // if (emotionData && emotionData.bgImage) {
+    //   bgImage.style.backgroundImage = `url(${emotionData.bgImage})`;
+    //   bgOverlay.style.background = `linear-gradient(to bottom, ${color}40 0%, ${color}90 100%)`;
+    //   document.body.classList.add("has-bg-image");
+    // } else {
+    document.body.style.background = color;
+    // }
+
+    // 다크/라이트 모드
+    const luma = getLuma(color);
+    if (luma < 140) {
+      document.body.classList.add("dark-bg");
+    }
+
+    // 색상 의미 표시
+    const colorMeaning = JSON.parse(localStorage.getItem("feelog_colorMeaning") || "null");
+    if (colorMeaning) {
+      document.getElementById("badge-dot").style.background = color;
+      document.getElementById("badge-text").textContent = colorMeaning.meaning;
+      document.getElementById("color-badge").classList.add("visible");
+    }
+
+    // 텍스트 자동 높이
+    const t = document.getElementById("text");
+    t.addEventListener("input", () => {
+      t.style.height = "auto";
+      t.style.height = t.scrollHeight + "px";
+    });
+
+    // 사진 업로드
+    const photoInput = document.getElementById("photo-input");
+    const photoBtn = document.getElementById("photo-btn");
+    const photoPreview = document.getElementById("photo-preview");
+    const previewImg = document.getElementById("preview-img");
+    const removePhotoBtn = document.getElementById("remove-photo");
+
+    let photoData = null;
+
+    photoBtn.addEventListener("click", () => {
+      photoInput.click();
+    });
+
+    photoInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // 이미지 리사이즈 (localStorage 용량 제한 대응)
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxSize = 600;
+          let w = img.width;
+          let h = img.height;
+
+          if (w > h) {
+            if (w > maxSize) { h = h * maxSize / w; w = maxSize; }
+          } else {
+            if (h > maxSize) { w = w * maxSize / h; h = maxSize; }
+          }
+
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+
+          photoData = canvas.toDataURL("image/jpeg", 0.7);
+          previewImg.src = photoData;
+          photoPreview.classList.remove("hidden");
+          photoBtn.classList.add("hidden");
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    removePhotoBtn.addEventListener("click", () => {
+      photoData = null;
+      previewImg.src = "";
+      photoPreview.classList.add("hidden");
+      photoBtn.classList.remove("hidden");
+      photoInput.value = "";
+    });
+
+    // 저장
+    const fly = document.getElementById("fly");
+    const saveBtn = document.getElementById("save");
+
+    saveBtn.addEventListener("click", () => {
+      const txt = t.value.trim();
+      if (!txt && !photoData) {
+        t.focus();
+        return;
+      }
+
+      const rect = t.getBoundingClientRect();
+
+      fly.textContent = txt || "📷";
+      fly.style.display = "block";
+      fly.style.background = color || "#ffffff";
+      const flyLuma = getLuma(color || "#ffffff");
+      fly.style.color = (flyLuma < 140) ? "#ffffff" : "#111111";
+      fly.style.left = rect.left + "px";
+      fly.style.top = rect.top + "px";
+      fly.style.width = rect.width + "px";
+      fly.style.transform = "translate(0, 0) scale(1)";
+      fly.style.opacity = "1";
+
+      const targetX = (window.innerWidth / 2) - (rect.left + rect.width / 2);
+      const targetY = (window.innerHeight - rect.bottom) - 120;
+
+      requestAnimationFrame(() => {
+        fly.style.transform = "translate(" + targetX + "px, " + targetY + "px) scale(0.55)";
+        fly.style.opacity = "0";
+      });
+
+      const entry = {
+        id: "f_" + Date.now(),
+        text: txt,
+        color: color || "#ffffff",
+        photo: photoData || null,
+        date: new Date().toISOString()
+      };
+
+      const list = JSON.parse(localStorage.getItem("feelog") || "[]");
+      list.push(entry);
+
+      // 오래된 사진 정리 (7일 이상)
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      list.forEach(item => {
+        if (item.photo && new Date(item.date).getTime() < sevenDaysAgo) {
+          item.photo = null;
+        }
+      });
+
+      localStorage.setItem("feelog", JSON.stringify(list));
+
+      setTimeout(() => {
+        location.href = "calendar.html";
+      }, 520);
+    });
+  </script>
+
+</body>
+
+</html>
